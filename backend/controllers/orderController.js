@@ -6,7 +6,7 @@ import User from '../models/User.js';
 // @access  Public
 export const createOrder = async (req, res) => {
     try {
-        const { firebaseUid, items, shippingAddress, paymentMethod, subtotal, tax, shipping, total, notes } = req.body;
+        const { firebaseUid, items, shippingAddress, paymentMethod, subtotal, tax, shipping, total, notes, paymentDetails } = req.body;
         
         if (!items || items.length === 0) {
             return res.status(400).json({ message: 'No order items' });
@@ -41,6 +41,7 @@ export const createOrder = async (req, res) => {
             },
             paymentMethod,
             paymentStatus: paymentMethod === 'cod' ? 'pending' : 'paid',
+            paymentDetails,
             subtotal,
             tax: tax || 0,
             shippingCost: shipping || 0,

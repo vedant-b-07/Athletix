@@ -12,7 +12,7 @@ const addressSchema = new mongoose.Schema({
 
 const userSchema = new mongoose.Schema({
   firebaseUid: { type: String, unique: true, sparse: true }, // For Firebase auth mapping
-  email: { type: String, required: true, unique: true },
+  email: { type: String, unique: true, sparse: true, default: '' },
   displayName: { type: String },
   phone: { type: String },
   photoUrl: { type: String },

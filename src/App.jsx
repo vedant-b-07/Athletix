@@ -16,6 +16,7 @@ import { Login, Register } from './pages/Auth';
 import Account from './pages/Account';
 import About from './pages/About';
 import Contact from './pages/Contact';
+import TermsConditions from './pages/TermsConditions';
 import AOS from 'aos';
 import 'aos/dist/aos.css';
 import './App.css';
@@ -51,6 +52,7 @@ function App() {
                   <Route path="/account" element={<Account />} />
                   <Route path="/about" element={<About />} />
                   <Route path="/contact" element={<Contact />} />
+                  <Route path="/terms-conditions" element={<TermsConditions />} />
                 </Routes>
                 <Footer />
                 <ToastContainer />

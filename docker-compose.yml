@@ -1,0 +1,42 @@
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: athletix_mongodb
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongodb_data:/data/db
+    restart: always
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: athletix_backend
+    ports:
+      - "5001:5000"
+    environment:
+      # Override the MONGO_URI to point to the docker container 
+      - MONGO_URI=mongodb://mongodb:27017/athletix_db
+    env_file:
+      - ./backend/.env
+    depends_on:
+      - mongodb
+    restart: always
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_RAZORPAY_KEY_ID: rzp_test_SLZ6kwfaOUolM6
+        VITE_API_URL: /api
+    container_name: athletix_frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: always
+
+volumes:
+  mongodb_data:

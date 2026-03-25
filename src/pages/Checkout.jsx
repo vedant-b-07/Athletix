@@ -6,8 +6,19 @@ import {
 } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
+import { PaymentService } from '../services/database';
 import { formatPrice } from '../data/products';
 import './Checkout.css';
+
+const loadScript = (src) => {
+    return new Promise((resolve) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = () => resolve(true);
+        script.onerror = () => resolve(false);
+        document.body.appendChild(script);
+    });
+};
 
 const Checkout = () => {
     const {
@@ -72,20 +83,85 @@ const Checkout = () => {
     };
 
     const handlePlaceOrder = async () => {
-        const order = {
-            items: cart.items,
-            shippingAddress: user.addresses.find(a => (a._id || a.id) === selectedAddress),
-            paymentMethod,
-            subtotal: getSubtotal(),
-            discount: getDiscount(),
-            shipping: getShipping(),
-            total: getTotal()
-        };
+        try {
+            const orderData = {
+                items: cart.items,
+                shippingAddress: user.addresses.find(a => (a._id || a.id) === selectedAddress),
+                paymentMethod,
+                subtotal: getSubtotal(),
+                discount: getDiscount(),
+                shipping: getShipping(),
+                total: getTotal()
+            };
 
-        const newOrder = await addOrder(order);
-        setOrderId(newOrder._id || newOrder.id);
-        setOrderPlaced(true);
-        clearCart();
+            if (paymentMethod !== 'cod') {
+                const res = await loadScript("https://checkout.razorpay.com/v1/checkout.js");
+                if (!res) {
+                    alert("Razorpay SDK failed to load. Are you online?");
+                    return;
+                }
+
+                const result = await PaymentService.createRazorpayOrder(orderData.total);
+                if (!result) {
+                    alert("Server error. Please try again.");
+                    return;
+                }
+
+                const { amount, id: order_id, currency } = result;
+
+                const options = {
+                    key: import.meta.env.VITE_RAZORPAY_KEY_ID,
+                    amount: amount.toString(),
+                    currency: currency,
+                    name: "Athletix",
+                    description: "Order Payment",
+                    order_id: order_id,
+                    handler: async function (response) {
+                        const data = {
+                            razorpay_payment_id: response.razorpay_payment_id,
+                            razorpay_order_id: response.razorpay_order_id,
+                            razorpay_signature: response.razorpay_signature,
+                        };
+
+                        try {
+                            const verify = await PaymentService.verifyPayment(data);
+                            if (verify.message === "Payment verified successfully") {
+                                const newOrder = await addOrder({ 
+                                    ...orderData, 
+                                    paymentDetails: data 
+                                });
+                                setOrderId(newOrder._id || newOrder.id);
+                                setOrderPlaced(true);
+                                clearCart();
+                            } else {
+                                alert("Payment verification failed!");
+                            }
+                        } catch (err) {
+                            alert("Payment verification error.");
+                        }
+                    },
+                    prefill: {
+                        name: user.name || '',
+                        email: user.email || '',
+                        contact: user.phone || orderData.shippingAddress?.phone || '',
+                    },
+                    theme: {
+                        color: "#000000",
+                    },
+                };
+
+                const paymentObject = new window.Razorpay(options);
+                paymentObject.open();
+            } else {
+                const newOrder = await addOrder(orderData);
+                setOrderId(newOrder._id || newOrder.id);
+                setOrderPlaced(true);
+                clearCart();
+            }
+        } catch (error) {
+            console.error("Order error", error);
+            alert("Something went wrong while placing order!");
+        }
     };
 
     if (orderPlaced) {
@@ -206,7 +282,7 @@ const Checkout = () => {
 
                                     {/* Add New Address */}
                                     {showAddressForm ? (
-                                        <form className="address-form" onSubmit={handleAddressSubmit}>
+                                        <form className="address-form" onSubmit={handleAddressSubmit} autoComplete="shipping">
                                             <h3>Add New Address</h3>
                                             <div className="form-row">
                                                 <div className="form-group">
@@ -215,6 +291,7 @@ const Checkout = () => {
                                                         type="text"
                                                         value={addressForm.name}
                                                         onChange={(e) => setAddressForm({ ...addressForm, name: e.target.value })}
+                                                        autoComplete="shipping name"
                                                         required
                                                     />
                                                 </div>
@@ -224,6 +301,7 @@ const Checkout = () => {
                                                         type="tel"
                                                         value={addressForm.phone}
                                                         onChange={(e) => setAddressForm({ ...addressForm, phone: e.target.value })}
+                                                        autoComplete="shipping tel"
                                                         required
                                                     />
                                                 </div>
@@ -234,6 +312,7 @@ const Checkout = () => {
                                                     type="text"
                                                     value={addressForm.street}
                                                     onChange={(e) => setAddressForm({ ...addressForm, street: e.target.value })}
+                                                    autoComplete="shipping street-address"
                                                     required
                                                 />
                                             </div>
@@ -244,6 +323,7 @@ const Checkout = () => {
                                                         type="text"
                                                         value={addressForm.city}
                                                         onChange={(e) => setAddressForm({ ...addressForm, city: e.target.value })}
+                                                        autoComplete="shipping address-level2"
                                                         required
                                                     />
                                                 </div>
@@ -253,6 +333,7 @@ const Checkout = () => {
                                                         type="text"
                                                         value={addressForm.state}
                                                         onChange={(e) => setAddressForm({ ...addressForm, state: e.target.value })}
+                                                        autoComplete="shipping address-level1"
                                                         required
                                                     />
                                                 </div>
@@ -262,6 +343,7 @@ const Checkout = () => {
                                                         type="text"
                                                         value={addressForm.pincode}
                                                         onChange={(e) => setAddressForm({ ...addressForm, pincode: e.target.value })}
+                                                        autoComplete="shipping postal-code"
                                                         required
                                                     />
                                                 </div>

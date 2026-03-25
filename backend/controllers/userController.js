@@ -90,17 +90,24 @@ export const getUserAddresses = async (req, res) => {
 // @access  Public
 export const addAddress = async (req, res) => {
     try {
-        const user = await User.findOne({ firebaseUid: req.params.uid });
-        if (user) {
-            if (req.body.isDefault) {
-                user.addresses.forEach(a => { a.isDefault = false; });
-            }
-            user.addresses.push(req.body);
-            await user.save();
-            res.status(201).json(user.addresses[user.addresses.length - 1]);
-        } else {
-            res.status(404).json({ message: 'User not found' });
+        let user = await User.findOne({ firebaseUid: req.params.uid });
+
+        // Auto-create user if not found (handles fresh Docker MongoDB)
+        if (!user) {
+            user = await User.create({
+                firebaseUid: req.params.uid,
+                email: '',
+                displayName: '',
+                lastLogin: Date.now()
+            });
         }
+
+        if (req.body.isDefault) {
+            user.addresses.forEach(a => { a.isDefault = false; });
+        }
+        user.addresses.push(req.body);
+        await user.save();
+        res.status(201).json(user.addresses[user.addresses.length - 1]);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }

@@ -9,23 +9,27 @@ import {
     deleteAddress,
     setDefaultAddress
 } from '../controllers/userController.js';
+import { protect, ownerOnly } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-router.post('/', upsertUser);
-router.route('/:uid')
-    .get(getUserProfile)
-    .put(updateUserProfile);
+// Public: upsert is called during login/signup (token is fresh, user may not exist yet)
+router.post('/', protect, upsertUser);
 
-// Addresses routes
+// Protected + Owner Only: user can only view/edit their own profile
+router.route('/:uid')
+    .get(protect, ownerOnly, getUserProfile)
+    .put(protect, ownerOnly, updateUserProfile);
+
+// Protected + Owner Only: address CRUD
 router.route('/:uid/addresses')
-    .get(getUserAddresses)
-    .post(addAddress);
+    .get(protect, ownerOnly, getUserAddresses)
+    .post(protect, ownerOnly, addAddress);
 
 router.route('/:uid/addresses/:addressId')
-    .put(updateAddress)
-    .delete(deleteAddress);
+    .put(protect, ownerOnly, updateAddress)
+    .delete(protect, ownerOnly, deleteAddress);
 
-router.put('/:uid/addresses/:addressId/default', setDefaultAddress);
+router.put('/:uid/addresses/:addressId/default', protect, ownerOnly, setDefaultAddress);
 
 export default router;
