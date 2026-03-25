@@ -1,16 +1,15 @@
-// Firebase configuration
+// Firebase configuration — reads from VITE_* env vars
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 
-// Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyBDidX-jw718LE9IqjyVQqQduMgGsx_sW8",
-  authDomain: "athletix-15748.firebaseapp.com",
-  projectId: "athletix-15748",
-  storageBucket: "athletix-15748.firebasestorage.app",
-  messagingSenderId: "48671200450",
-  appId: "1:48671200450:web:1170f70424c134a832975b",
-  measurementId: "G-KEBPVGXLRH"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 // Initialize Firebase
