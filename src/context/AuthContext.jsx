@@ -1,6 +1,7 @@
 import { createContext, useContext, useReducer, useEffect } from 'react';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase/config';
+import { UserService, AddressService, OrderService } from '../services/database';
 
 const AuthContext = createContext();
 
@@ -31,6 +32,13 @@ const authReducer = (state, action) => {
             };
         }
 
+        case 'SET_ADDRESSES': {
+            return {
+                ...state,
+                user: { ...state.user, addresses: action.payload }
+            };
+        }
+
         case 'ADD_ADDRESS': {
             const addresses = [...(state.user?.addresses || []), action.payload];
             return {
@@ -39,22 +47,29 @@ const authReducer = (state, action) => {
             };
         }
 
-        case 'REMOVE_ADDRESS': {
-            const addresses = state.user?.addresses?.filter((_, i) => i !== action.payload) || [];
+        case 'REMOVE_ADDRESS_ID': {
+            const addresses = state.user?.addresses?.filter((a) => a._id !== action.payload) || [];
             return {
                 ...state,
                 user: { ...state.user, addresses }
             };
         }
 
-        case 'SET_DEFAULT_ADDRESS': {
-            const addresses = state.user?.addresses?.map((addr, i) => ({
+        case 'SET_DEFAULT_ADDRESS_ID': {
+            const addresses = state.user?.addresses?.map((addr) => ({
                 ...addr,
-                isDefault: i === action.payload
+                isDefault: addr._id === action.payload
             })) || [];
             return {
                 ...state,
                 user: { ...state.user, addresses }
+            };
+        }
+
+        case 'SET_ORDERS': {
+            return {
+                ...state,
+                user: { ...state.user, orders: action.payload }
             };
         }
 
@@ -88,17 +103,38 @@ const initialState = {
 export const AuthProvider = ({ children }) => {
     const [state, dispatch] = useReducer(authReducer, initialState);
 
-    // Load user from localStorage on mount
+    // Load user from localStorage on mount & Sync with backend
     useEffect(() => {
         const savedUser = localStorage.getItem('athletix_user');
+        
+        const syncWithDb = async (parsedUser) => {
+            if (parsedUser?.user?.id) {
+                try {
+                    const dbUser = await UserService.getUserByFirebaseUid(parsedUser.user.id);
+                    if (dbUser) {
+                        const addresses = await AddressService.getUserAddresses(dbUser.id) || [];
+                        const orders = await OrderService.getUserOrders(dbUser.id) || [];
+                        dispatch({ 
+                            type: 'LOGIN', 
+                            payload: { ...parsedUser.user, addresses, orders } 
+                        });
+                    }
+                } catch (err) {
+                    console.error('Initial DB sync failed', err);
+                }
+            }
+        };
+
         if (savedUser) {
-            dispatch({ type: 'LOAD_USER', payload: JSON.parse(savedUser) });
+            const parsed = JSON.parse(savedUser);
+            dispatch({ type: 'LOAD_USER', payload: parsed });
+            syncWithDb(parsed); // Rehydrate completely from MongoDB in background
         } else {
             dispatch({ type: 'SET_LOADING', payload: false });
         }
     }, []);
 
-    // Save user to localStorage on change
+    // Save user to localStorage across sessions
     useEffect(() => {
         if (!state.loading) {
             localStorage.setItem('athletix_user', JSON.stringify(state));
@@ -106,8 +142,9 @@ export const AuthProvider = ({ children }) => {
     }, [state]);
 
     const register = (userData) => {
+        // Mock register for Demo
         const user = {
-            id: Date.now(),
+            id: Date.now().toString(),
             ...userData,
             addresses: [],
             orders: [],
@@ -118,7 +155,6 @@ export const AuthProvider = ({ children }) => {
     };
 
     const login = (email, password) => {
-        // In a real app, this would validate against a backend
         const savedState = localStorage.getItem('athletix_user');
         if (savedState) {
             const parsed = JSON.parse(savedState);
@@ -131,13 +167,13 @@ export const AuthProvider = ({ children }) => {
         // Demo login for testing
         if (email === 'demo@athletix.com' && password === 'demo123') {
             const demoUser = {
-                id: 1,
-                name: 'Demo User',
-                email: 'demo@athletix.com',
-                phone: '+91 9876543210',
+                id: 'dummyFirebaseUid123',
+                name: 'John Doe',
+                email: 'testuser@athletix.com',
+                phone: '+1 234 567 8900',
                 addresses: [
                     {
-                        id: 1,
+                        _id: 'sample_addr',
                         name: 'Demo User',
                         phone: '+91 9876543210',
                         street: '123 Sports Complex',
@@ -157,47 +193,49 @@ export const AuthProvider = ({ children }) => {
         return false;
     };
 
-    // Google Sign-In
+    // Google Sign-In with MongoDB backend integration
     const loginWithGoogle = async () => {
         try {
             const result = await signInWithPopup(auth, googleProvider);
             const firebaseUser = result.user;
 
-            // Check if user data exists in localStorage
-            const savedState = localStorage.getItem('athletix_user');
-            let existingUserData = null;
-
-            if (savedState) {
-                const parsed = JSON.parse(savedState);
-                if (parsed.user?.email === firebaseUser.email) {
-                    existingUserData = parsed.user;
-                }
-            }
-
-            // Create user object, preserving existing addresses and orders if any
-            const user = {
-                id: firebaseUser.uid,
-                name: firebaseUser.displayName || 'User',
+            // Save to MongoDB Backend
+            const dbUser = await UserService.upsertUser({
+                uid: firebaseUser.uid,
                 email: firebaseUser.email,
-                phone: firebaseUser.phoneNumber || existingUserData?.phone || '',
+                name: firebaseUser.displayName,
                 photoURL: firebaseUser.photoURL,
-                addresses: existingUserData?.addresses || [],
-                orders: existingUserData?.orders || [],
+                phone: firebaseUser.phoneNumber || '',
+                authProvider: 'google'
+            });
+
+            // Fetch live data directly from DB
+            const dbAddresses = await AddressService.getUserAddresses(dbUser.id) || [];
+            const dbOrders = await OrderService.getUserOrders(dbUser.id) || [];
+
+            // Shape standard state object
+            const user = {
+                id: dbUser.id,
+                name: dbUser.displayName || firebaseUser.displayName || 'User',
+                email: dbUser.email,
+                phone: dbUser.phone || '',
+                photoURL: dbUser.photoUrl,
+                addresses: dbAddresses,
+                orders: dbOrders,
                 authProvider: 'google',
-                createdAt: existingUserData?.createdAt || new Date().toISOString()
+                createdAt: dbUser.createdAt
             };
 
             dispatch({ type: 'LOGIN', payload: user });
             return { success: true, user };
         } catch (error) {
-            console.error('Google login error:', error);
+            console.error('Google & DB login error:', error);
             return { success: false, error: error.message };
         }
     };
 
     const logout = async () => {
         try {
-            // Sign out from Firebase if logged in with Google
             if (state.user?.authProvider === 'google') {
                 await signOut(auth);
             }
@@ -208,36 +246,59 @@ export const AuthProvider = ({ children }) => {
         localStorage.removeItem('athletix_user');
     };
 
-    const updateProfile = (data) => {
-        dispatch({ type: 'UPDATE_PROFILE', payload: data });
+    const updateProfile = async (data) => {
+        try {
+            if (state.user?.id) {
+                await UserService.updateUser(state.user.id, data);
+            }
+            dispatch({ type: 'UPDATE_PROFILE', payload: data });
+        } catch(e) {
+            console.error(e);
+        }
     };
 
-    const addAddress = (address) => {
-        const newAddress = {
-            id: Date.now(),
-            ...address,
-            isDefault: state.user?.addresses?.length === 0
-        };
-        dispatch({ type: 'ADD_ADDRESS', payload: newAddress });
+    const addAddress = async (address) => {
+        try {
+            if (state.user?.id) {
+                const addedAddr = await AddressService.addAddress(state.user.id, address);
+                dispatch({ type: 'ADD_ADDRESS', payload: addedAddr });
+            } else {
+                // Fallback offline
+                dispatch({ type: 'ADD_ADDRESS', payload: { ...address, _id: Date.now().toString() } });
+            }
+        } catch(e) { console.error('Error adding address', e); }
     };
 
-    const removeAddress = (index) => {
-        dispatch({ type: 'REMOVE_ADDRESS', payload: index });
+    const removeAddress = async (addressId) => {
+        try {
+            if (state.user?.id) {
+                await AddressService.deleteAddress(state.user.id, addressId);
+            }
+            dispatch({ type: 'REMOVE_ADDRESS_ID', payload: addressId });
+        } catch(e) { console.error('Error deleting address', e); }
     };
 
-    const setDefaultAddress = (index) => {
-        dispatch({ type: 'SET_DEFAULT_ADDRESS', payload: index });
+    const setDefaultAddress = async (addressId) => {
+        try {
+            if (state.user?.id) {
+                await AddressService.setDefaultAddress(state.user.id, addressId);
+            }
+            dispatch({ type: 'SET_DEFAULT_ADDRESS_ID', payload: addressId });
+        } catch(e) { console.error('Error setting default addr', e); }
     };
 
-    const addOrder = (order) => {
-        const newOrder = {
-            id: `ATH${Date.now()}`,
-            ...order,
-            status: 'confirmed',
-            createdAt: new Date().toISOString()
-        };
-        dispatch({ type: 'ADD_ORDER', payload: newOrder });
-        return newOrder;
+    const addOrder = async (orderData) => {
+        try {
+            if (state.user?.id) {
+                const newOrder = await OrderService.createOrder(state.user.id, orderData);
+                dispatch({ type: 'ADD_ORDER', payload: newOrder });
+                return newOrder;
+            }
+            return null;
+        } catch(e) {
+            console.error('Error placing order', e);
+            throw e;
+        }
     };
 
     const getDefaultAddress = () => {

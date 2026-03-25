@@ -53,7 +53,7 @@ const Checkout = () => {
         // Set default address
         const defaultAddr = getDefaultAddress();
         if (defaultAddr) {
-            setSelectedAddress(defaultAddr.id);
+            setSelectedAddress(defaultAddr._id || defaultAddr.id);
         }
     }, [isAuthenticated, cart.items, navigate, getDefaultAddress, orderPlaced]);
 
@@ -71,10 +71,10 @@ const Checkout = () => {
         });
     };
 
-    const handlePlaceOrder = () => {
+    const handlePlaceOrder = async () => {
         const order = {
             items: cart.items,
-            address: user.addresses.find(a => a.id === selectedAddress),
+            shippingAddress: user.addresses.find(a => (a._id || a.id) === selectedAddress),
             paymentMethod,
             subtotal: getSubtotal(),
             discount: getDiscount(),
@@ -82,8 +82,8 @@ const Checkout = () => {
             total: getTotal()
         };
 
-        const newOrder = addOrder(order);
-        setOrderId(newOrder.id);
+        const newOrder = await addOrder(order);
+        setOrderId(newOrder._id || newOrder.id);
         setOrderPlaced(true);
         clearCart();
     };
@@ -178,14 +178,14 @@ const Checkout = () => {
                                         <div className="saved-addresses">
                                             {user.addresses.map(address => (
                                                 <label
-                                                    key={address.id}
-                                                    className={`address-card ${selectedAddress === address.id ? 'selected' : ''}`}
+                                                    key={address._id || address.id}
+                                                    className={`address-card ${selectedAddress === (address._id || address.id) ? 'selected' : ''}`}
                                                 >
                                                     <input
                                                         type="radio"
                                                         name="address"
-                                                        checked={selectedAddress === address.id}
-                                                        onChange={() => setSelectedAddress(address.id)}
+                                                        checked={selectedAddress === (address._id || address.id)}
+                                                        onChange={() => setSelectedAddress(address._id || address.id)}
                                                     />
                                                     <div className="address-content">
                                                         <strong>{address.name}</strong>
@@ -419,16 +419,16 @@ const Checkout = () => {
                                             <h3>Shipping Address</h3>
                                             <button onClick={() => setStep(1)}>Change</button>
                                         </div>
-                                        {user?.addresses?.find(a => a.id === selectedAddress) && (
+                                        {user?.addresses?.find(a => (a._id || a.id) === selectedAddress) && (
                                             <div className="review-content">
-                                                <p><strong>{user.addresses.find(a => a.id === selectedAddress).name}</strong></p>
-                                                <p>{user.addresses.find(a => a.id === selectedAddress).street}</p>
+                                                <p><strong>{user.addresses.find(a => (a._id || a.id) === selectedAddress).name}</strong></p>
+                                                <p>{user.addresses.find(a => (a._id || a.id) === selectedAddress).street}</p>
                                                 <p>
-                                                    {user.addresses.find(a => a.id === selectedAddress).city},
-                                                    {user.addresses.find(a => a.id === selectedAddress).state}
-                                                    {user.addresses.find(a => a.id === selectedAddress).pincode}
+                                                    {user.addresses.find(a => (a._id || a.id) === selectedAddress).city},
+                                                    {user.addresses.find(a => (a._id || a.id) === selectedAddress).state}
+                                                    {user.addresses.find(a => (a._id || a.id) === selectedAddress).pincode}
                                                 </p>
-                                                <p>Phone: {user.addresses.find(a => a.id === selectedAddress).phone}</p>
+                                                <p>Phone: {user.addresses.find(a => (a._id || a.id) === selectedAddress).phone}</p>
                                             </div>
                                         )}
                                     </div>

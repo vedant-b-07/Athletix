@@ -221,14 +221,14 @@ const Account = () => {
                                     {user?.orders?.length > 0 ? (
                                         <div className="orders-list">
                                             {user.orders.map(order => (
-                                                <div key={order.id} className="order-card">
+                                                <div key={order._id || order.id} className="order-card">
                                                     <div className="order-header">
                                                         <div>
-                                                            <span className="order-id">Order #{order.id}</span>
-                                                            <span className="order-date">{new Date(order.date).toLocaleDateString()}</span>
+                                                            <span className="order-id">Order #{order.orderNumber || order.id}</span>
+                                                            <span className="order-date">{new Date(order.createdAt || order.date).toLocaleDateString()}</span>
                                                         </div>
-                                                        <span className={`order-status status-${order.status.toLowerCase()}`}>
-                                                            {order.status}
+                                                        <span className={`order-status status-${order.orderStatus?.toLowerCase() || order.status?.toLowerCase()}`}>
+                                                            {order.orderStatus || order.status}
                                                         </span>
                                                     </div>
                                                     <div className="order-items">
@@ -245,7 +245,7 @@ const Account = () => {
                                                     </div>
                                                     <div className="order-footer">
                                                         <span className="order-total">Total: <strong>{formatPrice(order.total)}</strong></span>
-                                                        <Link to={`/order/${order.id}`} className="btn btn-outline btn-sm">
+                                                        <Link to={`/order/${order._id || order.id}`} className="btn btn-outline btn-sm">
                                                             View Details
                                                         </Link>
                                                     </div>
@@ -354,7 +354,7 @@ const Account = () => {
                                     {user?.addresses?.length > 0 ? (
                                         <div className="addresses-grid">
                                             {user.addresses.map(address => (
-                                                <div key={address.id} className="address-card">
+                                                <div key={address._id || address.id} className="address-card">
                                                     <div className="address-content">
                                                         <strong>{address.name}</strong>
                                                         <p>{address.street}</p>
@@ -369,13 +369,13 @@ const Account = () => {
                                                     )}
                                                     <div className="address-actions">
                                                         {!address.isDefault && (
-                                                            <button onClick={() => setDefaultAddress(address.id)}>
+                                                            <button onClick={() => setDefaultAddress(address._id || address.id)}>
                                                                 Set as Default
                                                             </button>
                                                         )}
                                                         <button
                                                             className="delete-btn"
-                                                            onClick={() => removeAddress(address.id)}
+                                                            onClick={() => removeAddress(address._id || address.id)}
                                                         >
                                                             <Trash2 size={14} />
                                                         </button>

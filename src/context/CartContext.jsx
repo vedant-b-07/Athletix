@@ -64,30 +64,22 @@ const cartReducer = (state, action) => {
             return { ...state, items: [], coupon: null };
         }
 
-        case 'LOAD_CART': {
-            return action.payload;
-        }
-
         default:
             return state;
     }
 };
 
-const initialState = {
-    items: [],
-    coupon: null
+const initializeCart = () => {
+    try {
+        const saved = localStorage.getItem('athletix_cart');
+        return saved ? JSON.parse(saved) : { items: [], coupon: null };
+    } catch {
+        return { items: [], coupon: null };
+    }
 };
 
 export const CartProvider = ({ children }) => {
-    const [state, dispatch] = useReducer(cartReducer, initialState);
-
-    // Load cart from localStorage on mount
-    useEffect(() => {
-        const savedCart = localStorage.getItem('athletix_cart');
-        if (savedCart) {
-            dispatch({ type: 'LOAD_CART', payload: JSON.parse(savedCart) });
-        }
-    }, []);
+    const [state, dispatch] = useReducer(cartReducer, undefined, initializeCart);
 
     // Save cart to localStorage on change
     useEffect(() => {
