@@ -25,12 +25,12 @@ export const Login = () => {
         // Simulate API call
         await new Promise(resolve => setTimeout(resolve, 1000));
 
-        const success = login(email, password);
+        const result = await login(email, password);
 
-        if (success) {
+        if (result.success) {
             navigate(redirect);
         } else {
-            setError('Invalid email or password. Try demo@athletix.com / demo123');
+            setError(result.error || 'Invalid email or password. Try demo@athletix.com / demo123');
         }
 
         setLoading(false);
@@ -204,12 +204,53 @@ export const Register = () => {
     const navigate = useNavigate();
 
     const handleChange = (e) => {
-        setFormData({ ...formData, [e.target.name]: e.target.value });
+        const { name, value } = e.target;
+        let nextValue = value;
+
+        if (name === 'phone') {
+            nextValue = value.replace(/\D/g, '').slice(0, 10);
+        }
+
+        if (name === 'name') {
+            nextValue = value.replace(/\s{2,}/g, ' ');
+        }
+
+        setFormData((prev) => ({ ...prev, [name]: nextValue }));
+    };
+
+    const validateForm = () => {
+        const trimmedName = formData.name.trim();
+        const trimmedEmail = formData.email.trim();
+        const trimmedPhone = formData.phone.trim();
+        const nameRegex = /^[A-Za-z]+(?:[ '-][A-Za-z]+)*$/;
+        const phoneRegex = /^\d{10}$/;
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+        if (trimmedName.length < 2 || !nameRegex.test(trimmedName)) {
+            setError('Name must contain only letters and be at least 2 characters long');
+            return false;
+        }
+
+        if (!phoneRegex.test(trimmedPhone)) {
+            setError('Phone number must be 10 digits');
+            return false;
+        }
+
+        if (!emailRegex.test(trimmedEmail)) {
+            setError('Invalid email format');
+            return false;
+        }
+
+        return true;
     };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
+
+        if (!validateForm()) {
+            return;
+        }
 
         if (formData.password !== formData.confirmPassword) {
             setError('Passwords do not match');
@@ -226,16 +267,17 @@ export const Register = () => {
         // Simulate API call
         await new Promise(resolve => setTimeout(resolve, 1000));
 
-        const success = register({
-            name: formData.name,
-            email: formData.email,
-            phone: formData.phone
+        const result = await register({
+            name: formData.name.trim(),
+            email: formData.email.trim(),
+            phone: formData.phone.trim(),
+            password: formData.password
         });
 
-        if (success) {
+        if (result.success) {
             navigate('/');
         } else {
-            setError('Registration failed. Please try again.');
+            setError(result.error || 'Registration failed. Please try again.');
         }
 
         setLoading(false);
@@ -294,6 +336,8 @@ export const Register = () => {
                                     placeholder="Enter your full name"
                                     value={formData.name}
                                     onChange={handleChange}
+                                    minLength={2}
+                                    title="Name can contain letters, spaces, apostrophes, and hyphens only."
                                     required
                                 />
                             </div>
@@ -324,6 +368,10 @@ export const Register = () => {
                                     placeholder="Enter your phone number"
                                     value={formData.phone}
                                     onChange={handleChange}
+                                    inputMode="numeric"
+                                    maxLength={10}
+                                    minLength={10}
+                                    title="Phone number must be exactly 10 digits."
                                     required
                                 />
                             </div>

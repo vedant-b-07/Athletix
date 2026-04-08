@@ -1,5 +1,12 @@
 import { createContext, useContext, useReducer, useEffect } from 'react';
-import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
+import {
+    signInWithPopup,
+    signOut,
+    onAuthStateChanged,
+    signInWithEmailAndPassword,
+    createUserWithEmailAndPassword,
+    updateProfile as updateFirebaseProfile
+} from 'firebase/auth';
 import { auth, googleProvider } from '../firebase/config';
 import { UserService, AddressService, OrderService } from '../services/database';
 
@@ -100,17 +107,66 @@ const initialState = {
     loading: true
 };
 
+const getAuthErrorMessage = (error) => {
+    switch (error?.code) {
+        case 'auth/operation-not-allowed':
+            return 'Email/password sign-in is disabled in Firebase. Enable the Email/Password provider in Firebase Authentication.';
+        case 'auth/email-already-in-use':
+            return 'That email is already registered. Try signing in instead.';
+        case 'auth/invalid-credential':
+        case 'auth/invalid-login-credentials':
+        case 'auth/user-not-found':
+        case 'auth/wrong-password':
+            return 'Invalid email or password.';
+        case 'auth/weak-password':
+            return 'Password should be at least 6 characters long.';
+        default:
+            return error?.message || 'Authentication failed.';
+    }
+};
+
 export const AuthProvider = ({ children }) => {
     const [state, dispatch] = useReducer(authReducer, initialState);
+
+    const hasFirebaseSession = () => auth.currentUser?.uid && state.user?.id === auth.currentUser.uid;
+
+    const loadBackendUser = async (firebaseUser, extraProfile = {}) => {
+        const dbUser = await UserService.upsertUser({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            name: extraProfile.name || firebaseUser.displayName,
+            photoURL: firebaseUser.photoURL,
+            phone: extraProfile.phone ?? firebaseUser.phoneNumber ?? '',
+            authProvider: extraProfile.authProvider || 'email'
+        });
+
+        const dbAddresses = await AddressService.getUserAddresses(dbUser.id) || [];
+        const dbOrders = await OrderService.getUserOrders(dbUser.id) || [];
+
+        const user = {
+            id: dbUser.id,
+            name: dbUser.displayName || firebaseUser.displayName || extraProfile.name || 'User',
+            email: dbUser.email || firebaseUser.email || '',
+            phone: dbUser.phone || extraProfile.phone || firebaseUser.phoneNumber || '',
+            photoURL: dbUser.photoUrl || firebaseUser.photoURL || '',
+            addresses: dbAddresses,
+            orders: dbOrders,
+            authProvider: dbUser.authProvider || extraProfile.authProvider || 'email',
+            createdAt: dbUser.createdAt
+        };
+
+        dispatch({ type: 'LOGIN', payload: user });
+        return user;
+    };
 
     // Load user from localStorage on mount & Sync with backend
     useEffect(() => {
         const savedUser = localStorage.getItem('athletix_user');
-        
-        const syncWithDb = async (parsedUser) => {
-            if (parsedUser?.user?.id) {
+
+        const syncWithDb = async (parsedUser, firebaseUid) => {
+            if (parsedUser?.user?.id && firebaseUid && parsedUser.user.id === firebaseUid) {
                 try {
-                    const dbUser = await UserService.getUserByFirebaseUid(parsedUser.user.id);
+                    const dbUser = await UserService.getUserByFirebaseUid(firebaseUid);
                     if (dbUser) {
                         const addresses = await AddressService.getUserAddresses(dbUser.id) || [];
                         const orders = await OrderService.getUserOrders(dbUser.id) || [];
@@ -128,10 +184,22 @@ export const AuthProvider = ({ children }) => {
         if (savedUser) {
             const parsed = JSON.parse(savedUser);
             dispatch({ type: 'LOAD_USER', payload: parsed });
-            syncWithDb(parsed); // Rehydrate completely from MongoDB in background
         } else {
             dispatch({ type: 'SET_LOADING', payload: false });
         }
+
+        const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+            const parsedUser = savedUser ? JSON.parse(savedUser) : null;
+
+            if (parsedUser?.user?.id && firebaseUser?.uid && parsedUser.user.id === firebaseUser.uid) {
+                syncWithDb(parsedUser, firebaseUser.uid);
+                return;
+            }
+
+            dispatch({ type: 'SET_LOADING', payload: false });
+        });
+
+        return unsubscribe;
     }, []);
 
     // Save user to localStorage across sessions
@@ -141,29 +209,23 @@ export const AuthProvider = ({ children }) => {
         }
     }, [state]);
 
-    const register = (userData) => {
-        // Mock register for Demo
-        const user = {
-            id: Date.now().toString(),
-            ...userData,
-            addresses: [],
-            orders: [],
-            createdAt: new Date().toISOString()
-        };
-        dispatch({ type: 'LOGIN', payload: user });
-        return true;
+    const register = async (userData) => {
+        try {
+            const credential = await createUserWithEmailAndPassword(auth, userData.email, userData.password);
+            await updateFirebaseProfile(credential.user, { displayName: userData.name });
+            const user = await loadBackendUser(credential.user, {
+                name: userData.name,
+                phone: userData.phone,
+                authProvider: 'email'
+            });
+            return { success: true, user };
+        } catch (error) {
+            console.error('Register error:', error);
+            return { success: false, error: getAuthErrorMessage(error) };
+        }
     };
 
-    const login = (email, password) => {
-        const savedState = localStorage.getItem('athletix_user');
-        if (savedState) {
-            const parsed = JSON.parse(savedState);
-            if (parsed.user?.email === email) {
-                dispatch({ type: 'LOGIN', payload: parsed.user });
-                return true;
-            }
-        }
-
+    const login = async (email, password) => {
         // Demo login for testing
         if (email === 'demo@athletix.com' && password === 'demo123') {
             const demoUser = {
@@ -187,10 +249,17 @@ export const AuthProvider = ({ children }) => {
                 createdAt: new Date().toISOString()
             };
             dispatch({ type: 'LOGIN', payload: demoUser });
-            return true;
+            return { success: true, user: demoUser };
         }
 
-        return false;
+        try {
+            const credential = await signInWithEmailAndPassword(auth, email, password);
+            const user = await loadBackendUser(credential.user, { authProvider: 'email' });
+            return { success: true, user };
+        } catch (error) {
+            console.error('Login error:', error);
+            return { success: false, error: getAuthErrorMessage(error) };
+        }
     };
 
     // Google Sign-In with MongoDB backend integration
@@ -198,37 +267,12 @@ export const AuthProvider = ({ children }) => {
         try {
             const result = await signInWithPopup(auth, googleProvider);
             const firebaseUser = result.user;
-
-            // Save to MongoDB Backend
-            const dbUser = await UserService.upsertUser({
-                uid: firebaseUser.uid,
-                email: firebaseUser.email,
-                name: firebaseUser.displayName,
-                photoURL: firebaseUser.photoURL,
-                phone: firebaseUser.phoneNumber || '',
-                authProvider: 'google'
-            });
-
-            // Fetch live data directly from DB
-            const dbAddresses = await AddressService.getUserAddresses(dbUser.id) || [];
-            const dbOrders = await OrderService.getUserOrders(dbUser.id) || [];
-
-            // Shape standard state object
-            const user = {
-                id: dbUser.id,
-                name: dbUser.displayName || firebaseUser.displayName || 'User',
-                email: dbUser.email,
-                phone: dbUser.phone || '',
-                photoURL: dbUser.photoUrl,
-                addresses: dbAddresses,
-                orders: dbOrders,
-                authProvider: 'google',
-                createdAt: dbUser.createdAt
-            };
-
-            dispatch({ type: 'LOGIN', payload: user });
+            const user = await loadBackendUser(firebaseUser, { authProvider: 'google' });
             return { success: true, user };
         } catch (error) {
+            if (error?.code === 'auth/popup-closed-by-user') {
+                return { success: false, error: 'Google sign-in was cancelled.' };
+            }
             console.error('Google & DB login error:', error);
             return { success: false, error: error.message };
         }
@@ -248,7 +292,7 @@ export const AuthProvider = ({ children }) => {
 
     const updateProfile = async (data) => {
         try {
-            if (state.user?.id) {
+            if (hasFirebaseSession()) {
                 await UserService.updateUser(state.user.id, data);
             }
             dispatch({ type: 'UPDATE_PROFILE', payload: data });
@@ -259,19 +303,24 @@ export const AuthProvider = ({ children }) => {
 
     const addAddress = async (address) => {
         try {
-            if (state.user?.id) {
+            if (hasFirebaseSession()) {
                 const addedAddr = await AddressService.addAddress(state.user.id, address);
                 dispatch({ type: 'ADD_ADDRESS', payload: addedAddr });
+                return addedAddr;
             } else {
-                // Fallback offline
-                dispatch({ type: 'ADD_ADDRESS', payload: { ...address, _id: Date.now().toString() } });
+                const localAddress = { ...address, _id: Date.now().toString() };
+                dispatch({ type: 'ADD_ADDRESS', payload: localAddress });
+                return localAddress;
             }
-        } catch(e) { console.error('Error adding address', e); }
+        } catch(e) {
+            console.error('Error adding address', e);
+            throw e;
+        }
     };
 
     const removeAddress = async (addressId) => {
         try {
-            if (state.user?.id) {
+            if (hasFirebaseSession()) {
                 await AddressService.deleteAddress(state.user.id, addressId);
             }
             dispatch({ type: 'REMOVE_ADDRESS_ID', payload: addressId });
@@ -280,7 +329,7 @@ export const AuthProvider = ({ children }) => {
 
     const setDefaultAddress = async (addressId) => {
         try {
-            if (state.user?.id) {
+            if (hasFirebaseSession()) {
                 await AddressService.setDefaultAddress(state.user.id, addressId);
             }
             dispatch({ type: 'SET_DEFAULT_ADDRESS_ID', payload: addressId });
@@ -289,12 +338,19 @@ export const AuthProvider = ({ children }) => {
 
     const addOrder = async (orderData) => {
         try {
-            if (state.user?.id) {
+            if (hasFirebaseSession()) {
                 const newOrder = await OrderService.createOrder(state.user.id, orderData);
                 dispatch({ type: 'ADD_ORDER', payload: newOrder });
                 return newOrder;
             }
-            return null;
+            const localOrder = {
+                ...orderData,
+                _id: `local_order_${Date.now()}`,
+                orderNumber: `ATHLOCAL${Date.now()}`,
+                createdAt: new Date().toISOString()
+            };
+            dispatch({ type: 'ADD_ORDER', payload: localOrder });
+            return localOrder;
         } catch(e) {
             console.error('Error placing order', e);
             throw e;

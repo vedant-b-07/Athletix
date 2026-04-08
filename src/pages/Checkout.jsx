@@ -68,18 +68,24 @@ const Checkout = () => {
         }
     }, [isAuthenticated, cart.items, navigate, getDefaultAddress, orderPlaced]);
 
-    const handleAddressSubmit = (e) => {
+    const handleAddressSubmit = async (e) => {
         e.preventDefault();
-        addAddress(addressForm);
-        setShowAddressForm(false);
-        setAddressForm({
-            name: '',
-            phone: '',
-            street: '',
-            city: '',
-            state: '',
-            pincode: ''
-        });
+        try {
+            const addedAddress = await addAddress(addressForm);
+            setSelectedAddress(addedAddress?._id || addedAddress?.id || null);
+            setShowAddressForm(false);
+            setAddressForm({
+                name: '',
+                phone: '',
+                street: '',
+                city: '',
+                state: '',
+                pincode: ''
+            });
+        } catch (error) {
+            console.error('Failed to save address during checkout', error);
+            alert('We could not save that address. Please sign in again and try once more.');
+        }
     };
 
     const handlePlaceOrder = async () => {

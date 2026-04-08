@@ -2,12 +2,23 @@ import { auth } from '../firebase/config';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
+const waitForAuthReady = async () => {
+  try {
+    if (typeof auth.authStateReady === 'function') {
+      await auth.authStateReady();
+    }
+  } catch (error) {
+    console.error('Error waiting for auth state:', error);
+  }
+};
+
 /**
  * Get the current user's Firebase ID token for authenticated requests.
  * Returns null if the user is not signed in via Firebase.
  */
 const getAuthToken = async () => {
   try {
+    await waitForAuthReady();
     const user = auth.currentUser;
     if (user) {
       return await user.getIdToken();
@@ -22,9 +33,12 @@ const getAuthToken = async () => {
 /**
  * Build headers with optional auth token
  */
-const getHeaders = async () => {
+const getHeaders = async ({ requireAuth = false } = {}) => {
   const headers = { 'Content-Type': 'application/json' };
   const token = await getAuthToken();
+  if (requireAuth && !token) {
+    throw new Error('Authentication required');
+  }
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
@@ -50,7 +64,7 @@ export class UserService {
     try {
       const response = await fetch(`${API_URL}/users`, {
         method: 'POST',
-        headers: await getHeaders(),
+        headers: await getHeaders({ requireAuth: true }),
         body: JSON.stringify({
           firebaseUid: userData.uid || userData.id || userData.firebaseUid,
           email: userData.email,
@@ -71,7 +85,7 @@ export class UserService {
   static async getUserByFirebaseUid(firebaseUid) {
     try {
       const response = await fetch(`${API_URL}/users/${firebaseUid}`, {
-        headers: await getHeaders()
+        headers: await getHeaders({ requireAuth: true })
       });
       if (response.status === 404) return null;
       const data = await handleResponse(response);
@@ -86,7 +100,7 @@ export class UserService {
     try {
       const response = await fetch(`${API_URL}/users/${firebaseUid}`, {
         method: 'PUT',
-        headers: await getHeaders(),
+        headers: await getHeaders({ requireAuth: true }),
         body: JSON.stringify(updates)
       });
       const data = await handleResponse(response);
@@ -105,7 +119,7 @@ export class AddressService {
   static async getUserAddresses(firebaseUid) {
     try {
       const response = await fetch(`${API_URL}/users/${firebaseUid}/addresses`, {
-        headers: await getHeaders()
+        headers: await getHeaders({ requireAuth: true })
       });
       return await handleResponse(response);
     } catch (error) {
@@ -118,7 +132,7 @@ export class AddressService {
     try {
       const response = await fetch(`${API_URL}/users/${firebaseUid}/addresses`, {
         method: 'POST',
-        headers: await getHeaders(),
+        headers: await getHeaders({ requireAuth: true }),
         body: JSON.stringify(addressData)
       });
       return await handleResponse(response);
@@ -132,7 +146,7 @@ export class AddressService {
     try {
       const response = await fetch(`${API_URL}/users/${firebaseUid}/addresses/${addressId}`, {
         method: 'PUT',
-        headers: await getHeaders(),
+        headers: await getHeaders({ requireAuth: true }),
         body: JSON.stringify(updates)
       });
       return await handleResponse(response);
@@ -146,7 +160,7 @@ export class AddressService {
     try {
       const response = await fetch(`${API_URL}/users/${firebaseUid}/addresses/${addressId}`, {
         method: 'DELETE',
-        headers: await getHeaders()
+        headers: await getHeaders({ requireAuth: true })
       });
       await handleResponse(response);
       return true;
@@ -160,7 +174,7 @@ export class AddressService {
     try {
       const response = await fetch(`${API_URL}/users/${firebaseUid}/addresses/${addressId}/default`, {
         method: 'PUT',
-        headers: await getHeaders()
+        headers: await getHeaders({ requireAuth: true })
       });
       return await handleResponse(response);
     } catch (error) {
@@ -183,7 +197,7 @@ export class OrderService {
 
       const response = await fetch(`${API_URL}/orders`, {
         method: 'POST',
-        headers: await getHeaders(),
+        headers: await getHeaders({ requireAuth: true }),
         body: JSON.stringify(payload)
       });
       return await handleResponse(response);
@@ -196,7 +210,7 @@ export class OrderService {
   static async getUserOrders(firebaseUid) {
     try {
       const response = await fetch(`${API_URL}/orders/myorders/${firebaseUid}`, {
-        headers: await getHeaders()
+        headers: await getHeaders({ requireAuth: true })
       });
       return await handleResponse(response);
     } catch (error) {
@@ -208,7 +222,7 @@ export class OrderService {
   static async getOrderById(orderId) {
     try {
       const response = await fetch(`${API_URL}/orders/${orderId}`, {
-        headers: await getHeaders()
+        headers: await getHeaders({ requireAuth: true })
       });
       if (response.status === 404) return null;
       return await handleResponse(response);
@@ -222,7 +236,7 @@ export class OrderService {
     try {
       const response = await fetch(`${API_URL}/orders/${orderId}/status`, {
         method: 'PUT',
-        headers: await getHeaders(),
+        headers: await getHeaders({ requireAuth: true }),
         body: JSON.stringify({ status })
       });
       return await handleResponse(response);
@@ -240,7 +254,7 @@ export class WishlistService {
   static async getUserWishlist(firebaseUid) {
     try {
       const response = await fetch(`${API_URL}/wishlist/${firebaseUid}`, {
-        headers: await getHeaders()
+        headers: await getHeaders({ requireAuth: true })
       });
       return await handleResponse(response);
     } catch (error) {
@@ -253,7 +267,7 @@ export class WishlistService {
     try {
       const response = await fetch(`${API_URL}/wishlist`, {
         method: 'POST',
-        headers: await getHeaders(),
+        headers: await getHeaders({ requireAuth: true }),
         body: JSON.stringify({ firebaseUid, productId })
       });
       return await handleResponse(response);
@@ -267,7 +281,7 @@ export class WishlistService {
     try {
       const response = await fetch(`${API_URL}/wishlist/${firebaseUid}/${productId}`, {
         method: 'DELETE',
-        headers: await getHeaders()
+        headers: await getHeaders({ requireAuth: true })
       });
       await handleResponse(response);
       return true;
@@ -286,7 +300,7 @@ export class PaymentService {
     try {
       const response = await fetch(`${API_URL}/payment/create-order`, {
         method: 'POST',
-        headers: await getHeaders(),
+        headers: await getHeaders({ requireAuth: true }),
         body: JSON.stringify({ amount })
       });
       return await handleResponse(response);
@@ -300,7 +314,7 @@ export class PaymentService {
     try {
       const response = await fetch(`${API_URL}/payment/verify`, {
         method: 'POST',
-        headers: await getHeaders(),
+        headers: await getHeaders({ requireAuth: true }),
         body: JSON.stringify(paymentData)
       });
       return await handleResponse(response);
