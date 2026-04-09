@@ -1,9 +1,14 @@
 import { auth } from '../firebase/config';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_URL = import.meta.env.VITE_API_URL || (
+  import.meta.env.PROD ? '/api' : 'http://localhost:5000/api'
+);
 
 const waitForAuthReady = async () => {
   try {
+    if (!auth) {
+      return;
+    }
     if (typeof auth.authStateReady === 'function') {
       await auth.authStateReady();
     }
@@ -18,6 +23,9 @@ const waitForAuthReady = async () => {
  */
 const getAuthToken = async () => {
   try {
+    if (!auth) {
+      return null;
+    }
     await waitForAuthReady();
     const user = auth.currentUser;
     if (user) {

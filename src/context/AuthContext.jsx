@@ -7,7 +7,7 @@ import {
     createUserWithEmailAndPassword,
     updateProfile as updateFirebaseProfile
 } from 'firebase/auth';
-import { auth, googleProvider } from '../firebase/config';
+import { auth, googleProvider, isFirebaseConfigured } from '../firebase/config';
 import { UserService, AddressService, OrderService } from '../services/database';
 
 const AuthContext = createContext();
@@ -125,10 +125,12 @@ const getAuthErrorMessage = (error) => {
     }
 };
 
+const firebaseDisabledMessage = 'Authentication is not configured for this deployment yet. Add the Firebase Vercel environment variables to enable sign-in.';
+
 export const AuthProvider = ({ children }) => {
     const [state, dispatch] = useReducer(authReducer, initialState);
 
-    const hasFirebaseSession = () => auth.currentUser?.uid && state.user?.id === auth.currentUser.uid;
+    const hasFirebaseSession = () => auth?.currentUser?.uid && state.user?.id === auth.currentUser.uid;
 
     const loadBackendUser = async (firebaseUser, extraProfile = {}) => {
         const dbUser = await UserService.upsertUser({
@@ -188,6 +190,10 @@ export const AuthProvider = ({ children }) => {
             dispatch({ type: 'SET_LOADING', payload: false });
         }
 
+        if (!auth) {
+            return () => {};
+        }
+
         const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
             const parsedUser = savedUser ? JSON.parse(savedUser) : null;
 
@@ -211,6 +217,9 @@ export const AuthProvider = ({ children }) => {
 
     const register = async (userData) => {
         try {
+            if (!isFirebaseConfigured() || !auth) {
+                return { success: false, error: firebaseDisabledMessage };
+            }
             const credential = await createUserWithEmailAndPassword(auth, userData.email, userData.password);
             await updateFirebaseProfile(credential.user, { displayName: userData.name });
             const user = await loadBackendUser(credential.user, {
@@ -253,6 +262,9 @@ export const AuthProvider = ({ children }) => {
         }
 
         try {
+            if (!isFirebaseConfigured() || !auth) {
+                return { success: false, error: firebaseDisabledMessage };
+            }
             const credential = await signInWithEmailAndPassword(auth, email, password);
             const user = await loadBackendUser(credential.user, { authProvider: 'email' });
             return { success: true, user };
@@ -265,6 +277,9 @@ export const AuthProvider = ({ children }) => {
     // Google Sign-In with MongoDB backend integration
     const loginWithGoogle = async () => {
         try {
+            if (!isFirebaseConfigured() || !auth || !googleProvider) {
+                return { success: false, error: firebaseDisabledMessage };
+            }
             const result = await signInWithPopup(auth, googleProvider);
             const firebaseUser = result.user;
             const user = await loadBackendUser(firebaseUser, { authProvider: 'google' });
@@ -280,7 +295,7 @@ export const AuthProvider = ({ children }) => {
 
     const logout = async () => {
         try {
-            if (state.user?.authProvider === 'google') {
+            if (state.user?.authProvider === 'google' && auth) {
                 await signOut(auth);
             }
         } catch (error) {

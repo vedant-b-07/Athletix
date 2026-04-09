@@ -1,4 +1,4 @@
-// Firebase configuration — reads from VITE_* env vars
+// Firebase configuration: reads from VITE_* env vars.
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 
@@ -12,17 +12,23 @@ const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
+const requiredFirebaseKeys = ['apiKey', 'authDomain', 'projectId', 'appId'];
+const hasRequiredFirebaseConfig = requiredFirebaseKeys.every((key) => Boolean(firebaseConfig[key]));
 
-// Initialize Firebase Authentication
-export const auth = getAuth(app);
+if (!hasRequiredFirebaseConfig) {
+  console.warn('Firebase credentials are missing. Auth features will be disabled until the Vercel environment variables are configured.');
+}
 
-// Initialize Google Auth Provider
-export const googleProvider = new GoogleAuthProvider();
+const app = hasRequiredFirebaseConfig ? initializeApp(firebaseConfig) : null;
 
-// Optional: Add scopes for additional user info
-googleProvider.addScope('profile');
-googleProvider.addScope('email');
+export const auth = app ? getAuth(app) : null;
+export const googleProvider = auth ? new GoogleAuthProvider() : null;
+
+if (googleProvider) {
+  googleProvider.addScope('profile');
+  googleProvider.addScope('email');
+}
+
+export const isFirebaseConfigured = () => hasRequiredFirebaseConfig;
 
 export default app;
